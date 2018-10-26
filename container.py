@@ -3,9 +3,9 @@ import operator as ope
 
 
 try:
-   basestring
+    basestring
 except NameError:
-   basestring=str
+    basestring = str
 
 
 def in_(a, b):
@@ -36,7 +36,7 @@ class Filter:
     @classmethod
     def translate_sql(cls, key, value):
         """ translate filter with (quasi)django notation to sql notation
-        :param key: a key in (quasi)djano notation (exception is like which stands for startswith, contains and endswith)
+        :param key: a key in (quasi)djano notation
         :param value: a value to compare
         :return: the equivalent sql expression
         """
@@ -70,7 +70,19 @@ class TableContainer:
         return len(self.table)
 
     def __iter__(self):
+        """ iterate over raw lines of table
+        """
         return iter(self.table)
+
+    def iter_tuple(self):
+        """ iterate over lines of table rendered as tuples of pairs (label, value)
+        """
+        return (zip(self.fields, l) for l in self.table)
+
+    def iter_dict(self):
+        """ iterate over lines of table rendered as dict {label: value}
+        """
+        return (dict(zip(self.fields, l)) for l in self.table)
 
     def append(self, line):
         self.table.append(line)
@@ -79,7 +91,7 @@ class TableContainer:
             pass
 
     def filter(self, *filters):
-        """ generator over filtered lines of the table
+        """ generator over filtered raw lines of the table
         :param filters: iterable of tuple (key, value) or (key, op, value)
                a AND operation is performed among them
         """
@@ -103,6 +115,7 @@ class TableContainer:
         :param keys: (tuple)
         :param filters:
         """
+        # TODO make a distinct method for single field instead of tuple of fields
         kidx = [self.idx[k] for k in keys]
         d = set()
         for l in self.filter(*filters):
@@ -115,6 +128,7 @@ class TableContainer:
         :param fields: list of pairs (key, aggregator) where aggregator is a dict-like class
         :param filters:
         """
+        # TODO make an aggregate method for single field instead of tuple of fields
         kidx = [self.idx[k] for k in keys]
         fld = [(self.idx[k], v()) for k, v in fields]
         for l in self.filter(*filters):
@@ -124,12 +138,26 @@ class TableContainer:
         return [v for _, v in fld]
 
 
-class SortMixin:
-    def as_sorted_list_on_agg(self, reverse=False):
+class CountSortMixin:
+    def sorted(self, reverse=False):
         return sorted(((k, v) for k, v in self.items()), key=ope.itemgetter(1), reverse=reverse)
 
 
-class Count(SortMixin, dict):
+class LenSortMixin:
+    def sorted(self, reverse=False):
+        return sorted(((k, v) for k, v in self.items()), key=lambda x: len(x[1]), reverse=reverse)
+
+
+class FilteredMixin:
+    def __init__(self, op, value):
+        dict.__init__(self)
+        self.op = Filter.tr_python[op] if isinstance(op, basestring) else op
+        self.value = value
+    def __call__(self):
+        return self
+
+
+class Count(CountSortMixin, dict):
     def __setitem__(self, key, value):
         if key in self:
             dict.__setitem__(self, key, self[key] + 1)
@@ -137,35 +165,7 @@ class Count(SortMixin, dict):
             dict.__setitem__(self, key, 1)
 
 
-class Sum(SortMixin, dict):
-    def __setitem__(self, key, value):
-        if key in self:
-            dict.__setitem__(self, key, self[key] + value)
-        else:
-            dict.__setitem__(self, key, value)
-
-
-class AggList(dict):
-    def __setitem__(self, key, value):
-        if key in self:
-            self[key].append(value)
-        else:
-            dict.__setitem__(self, key, [value])
-
-
-class AggSet(dict):
-    def __setitem__(self, key, value):
-        if key in self:
-            self[key].add(value)
-        else:
-            dict.__setitem__(self, key, {value})
-
-
-class FilteredCount(SortMixin, dict):
-    def __init__(self, op, value):
-        dict.__init__(self)
-        self.op = Filter.tr_python[op] if isinstance(op, basestring) else op
-        self.value = value
+class FilteredCount(FilteredMixin, CountSortMixin, dict):
     def __setitem__(self, key, value):
         if self.op(value, self.value):
             if key in self:
@@ -174,5 +174,49 @@ class FilteredCount(SortMixin, dict):
                 dict.__setitem__(self, key, 1)
         elif key not in self:
             dict.__setitem__(self, key, 0)
-    def __call__(self):
-        return self
+
+
+class Sum(CountSortMixin, dict):
+    def __setitem__(self, key, value):
+        if key in self:
+            dict.__setitem__(self, key, self[key] + value)
+        else:
+            dict.__setitem__(self, key, value)
+
+
+class AggList(LenSortMixin, dict):
+    def __setitem__(self, key, value):
+        if key in self:
+            self[key].append(value)
+        else:
+            dict.__setitem__(self, key, [value])
+
+
+class FilteredAggList(FilteredMixin, LenSortMixin, dict):
+    def __setitem__(self, key, value):
+        if self.op(value, self.value):
+            if key in self:
+                self[key].append(value)
+            else:
+                dict.__setitem__(self, key, [value])
+        elif key not in self:
+            dict.__setitem__(self, key, [])
+
+
+class AggSet(LenSortMixin, dict):
+    def __setitem__(self, key, value):
+        if key in self:
+            self[key].add(value)
+        else:
+            dict.__setitem__(self, key, {value})
+
+
+class FilteredAggSet(FilteredMixin, LenSortMixin, dict):
+    def __setitem__(self, key, value):
+        if self.op(value, self.value):
+            if key in self:
+                self[key].add(value)
+            else:
+                dict.__setitem__(self, key, {value})
+        elif key not in self:
+            dict.__setitem__(self, key, set())

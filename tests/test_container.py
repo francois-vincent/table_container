@@ -9,12 +9,16 @@ table1 = [('toto', 12, 'M'), ('bob', 23, 'M'), ('bobette', 22, 'F')]
 def test_empty():
     c = TableContainer([], ())
     assert c.idx == {}
+    assert list(c.filter()) == []
+    assert c.distinct(()) == set()
+    assert c.aggregate((), ()) == []
 
 
 def test_basic():
     c = TableContainer(table1, headers1)
     assert len(c) == 3
     assert c[0] is table1[0]
+    assert next(c.iter_dict()) == dict(name='toto', age=12, gender='M')
 
 
 def test_distinct():
