@@ -90,12 +90,16 @@ class TableContainer:
             # TODO update indexes
             pass
 
+    def exclude(self, *filters):
+        # TODO
+        pass
+
     def filter(self, *filters):
         """ generator over filtered raw lines of the table
         :param filters: iterable of tuple (key, value) or (key, op, value)
                a AND operation is performed among them
         """
-        # TODO make Q and F filters
+        # TODO make Q and F filters (filters should be objects)
         flt = []
         for f in filters:
             k, op, v = Filter.translate_py(*f)
